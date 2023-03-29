@@ -367,6 +367,8 @@ func GetEmptyObjectWithKey(object client.Object) client.Object {
 		empty = &appsv1alpha1.CloneSet{}
 	case *appsv1beta1.StatefulSet:
 		empty = &appsv1beta1.StatefulSet{}
+	case *appsv1alpha1.DaemonSet:
+		empty = &appsv1alpha1.DaemonSet{}
 	case *unstructured.Unstructured:
 		unstructure := &unstructured.Unstructured{}
 		unstructure.SetGroupVersionKind(object.GetObjectKind().GroupVersionKind())

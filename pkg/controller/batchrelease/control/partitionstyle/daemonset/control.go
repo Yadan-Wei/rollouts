@@ -136,15 +136,11 @@ func (rc *realController) CalculateBatchContext(release *v1alpha1.BatchRelease) 
 	// the number of no need update pods that marked before rollout
 	noNeedUpdate := release.Status.CanaryStatus.NoNeedUpdateReplicas
 	// the number of upgraded pods according to release plan in current batch.
-	// rc.Replicas need to change to another value CurrentNumberSchduled or desiredNumberScheduled?
-	// updated is what, node has been updated by prev batch?
 	plannedUpdate := int32(control.CalculateBatchReplicas(release, int(rc.Replicas), int(currentBatch)))
 	// the number of pods that should be upgraded in real
 	desiredUpdate := plannedUpdate
 	// the number of pods that should not be upgraded in real
-	//change rc.replicas
 	desiredStable := rc.Replicas - desiredUpdate
-	//do we need to consider this?
 	// if we should consider the no-need-update pods that were marked before progressing
 	if noNeedUpdate != nil && *noNeedUpdate > 0 {
 		// specially, we should ignore the pods that were marked as no-need-update, this logic is for Rollback scene
@@ -167,17 +163,16 @@ func (rc *realController) CalculateBatchContext(release *v1alpha1.BatchRelease) 
 	}
 
 	batchContext := &batchcontext.BatchContext{
-		Pods:             rc.pods,
-		RolloutID:        rolloutID,
-		CurrentBatch:     currentBatch,
-		UpdateRevision:   release.Status.UpdateRevision,
+		Pods:         rc.pods,
+		RolloutID:    rolloutID,
+		CurrentBatch: currentBatch,
+		//UpdateRevision:   release.Status.UpdateRevision,
 		DesiredPartition: desiredPartition,
 		CurrentPartition: currentPartition,
 		FailureThreshold: release.Spec.ReleasePlan.FailureThreshold,
-		//replica number
-		Replicas:               rc.Replicas,
-		UpdatedReplicas:        rc.Status.UpdatedReplicas,
-		UpdatedReadyReplicas:   rc.Status.UpdatedReadyReplicas,
+		Replicas:         rc.Replicas,
+		UpdatedReplicas:  rc.Status.UpdatedReplicas,
+		//UpdatedReadyReplicas:   rc.Status.UpdatedReadyReplicas,
 		NoNeedUpdatedReplicas:  noNeedUpdate,
 		PlannedUpdatedReplicas: plannedUpdate,
 		DesiredUpdatedReplicas: desiredUpdate,

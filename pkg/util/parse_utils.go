@@ -223,12 +223,13 @@ func ParseWorkloadStatus(object client.Object) *WorkloadStatus {
 
 	case *appsv1alpha1.DaemonSet:
 		return &WorkloadStatus{
-			Replicas:           o.Status.DesiredNumberScheduled,
-			ReadyReplicas:      o.Status.NumberReady,
-			AvailableReplicas:  o.Status.NumberAvailable,
-			UpdatedReplicas:    o.Status.UpdatedNumberScheduled,
+			Replicas:          o.Status.DesiredNumberScheduled,
+			ReadyReplicas:     o.Status.NumberReady,
+			AvailableReplicas: o.Status.NumberAvailable,
+			UpdatedReplicas:   o.Status.UpdatedNumberScheduled,
+			//UpdatedReadyReplicas: o.Status.UpdatedReadyReplicas，
 			ObservedGeneration: o.Status.ObservedGeneration,
-			UpdateRevision:     o.Status.DaemonSetHash,
+			//UpdateRevision:     o.Status.DaemonSetHash,
 			//StableRevision:       o.Status.CurrentRevision,
 		}
 
@@ -283,6 +284,8 @@ func GetTemplate(object client.Object) *corev1.PodTemplateSpec {
 		return &o.Spec.Template
 	case *appsv1beta1.StatefulSet:
 		return &o.Spec.Template
+	case *appsv1alpha1.StatefulSet:
+		return &o.Spec.Template
 	case *unstructured.Unstructured:
 		return parseTemplateFromUnstructured(o)
 	default:
@@ -300,6 +303,8 @@ func getSelector(object client.Object) (labels.Selector, error) {
 	case *apps.StatefulSet:
 		return metav1.LabelSelectorAsSelector(o.Spec.Selector)
 	case *appsv1beta1.StatefulSet:
+		return metav1.LabelSelectorAsSelector(o.Spec.Selector)
+	case *appsv1alpha1.DaemonSet:
 		return metav1.LabelSelectorAsSelector(o.Spec.Selector)
 	case *unstructured.Unstructured:
 		return parseSelectorFromUnstructured(o)
