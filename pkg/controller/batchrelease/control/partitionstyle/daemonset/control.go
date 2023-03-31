@@ -76,23 +76,23 @@ func (rc *realController) Initialize(release *v1alpha1.BatchRelease) error {
 
 	daemon := util.GetEmptyObjectWithKey(rc.object)
 	owner := control.BuildReleaseControlInfo(release)
-	body := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}},"spec":{"updateStrategy":{"paused":%v,"partition":"%s"}}}`,
-		util.BatchReleaseControlAnnotation, owner, false, "100%")
+	body := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}},"spec":{"updateStrategy":{"RollingUpdate":{"paused":%v,"partition":%d}}}}`,
+		util.BatchReleaseControlAnnotation, owner, false, rc.Replicas)
 	return rc.client.Patch(context.TODO(), daemon, client.RawPatch(types.MergePatchType, []byte(body)))
 }
 
 func (rc *realController) UpgradeBatch(ctx *batchcontext.BatchContext) error {
 	var body string
 	var desired int
-	switch partition := ctx.DesiredPartition; partition.Type {
-	case intstr.Int:
-		desired = int(partition.IntVal)
-		body = fmt.Sprintf(`{"spec":{"updateStrategy":{"partition": %d }}}`, partition.IntValue())
-	case intstr.String:
-		desired, _ = intstr.GetScaledValueFromIntOrPercent(&partition, int(ctx.Replicas), true)
-		body = fmt.Sprintf(`{"spec":{"updateStrategy":{"partition":"%s"}}}`, partition.String())
-	}
-	current, _ := intstr.GetScaledValueFromIntOrPercent(&ctx.CurrentPartition, int(ctx.Replicas), true)
+	partition := ctx.DesiredPartition
+
+	desired = int(partition.IntVal)
+	body = fmt.Sprintf(`{"spec":{"updateStrategy":{"RollingUpdate:{"partition": %d }}}}`, partition.IntValue())
+	// case intstr.String:
+	// 	desired, _ = intstr.GetScaledValueFromIntOrPercent(&partition, int(ctx.Replicas), true)
+	// 	body = fmt.Sprintf(`{"spec":{"updateStrategy":{"RollingUpdate: {"partition":"%s"}}}}`, partition.String())
+	//}
+	current := int(ctx.CurrentPartition.IntVal)
 
 	// current less than desired, which means current revision replicas will be less than desired,
 	// in other word, update revision replicas will be more than desired, no need to update again.
@@ -112,7 +112,7 @@ func (rc *realController) Finalize(release *v1alpha1.BatchRelease) error {
 	var specBody string
 	// if batchPartition == nil, workload should be promoted.
 	if release.Spec.ReleasePlan.BatchPartition == nil {
-		specBody = `,"spec":{"updateStrategy":{"partition":null,"paused":false}}`
+		specBody = `,"spec":{"updateStrategy":{"RollingUpdate": {"partition":null,"paused":false}}}`
 	}
 
 	body := fmt.Sprintf(`{"metadata":{"annotations":{"%s":null}}%s}`, util.BatchReleaseControlAnnotation, specBody)
@@ -151,10 +151,13 @@ func (rc *realController) CalculateBatchContext(release *v1alpha1.BatchRelease) 
 
 	// make sure at least one pod is upgrade is canaryReplicas is not "0%"
 	desiredPartition := intstr.FromInt(int(desiredStable))
-	batchPlan := release.Spec.ReleasePlan.Batches[currentBatch].CanaryReplicas
-	if batchPlan.Type == intstr.String {
-		desiredPartition = control.ParseIntegerAsPercentageIfPossible(desiredStable, rc.Replicas, &batchPlan)
+	if desiredStable <= 0 {
+		desiredPartition = intstr.FromInt(0)
 	}
+	// batchPlan := release.Spec.ReleasePlan.Batches[currentBatch].CanaryReplicas
+	// if batchPlan.Type == intstr.String {
+	//desiredPartition = control.ParseIntegerAsPercentageIfPossible(desiredStable, rc.Replicas, &batchPlan)
+	// }
 
 	currentPartition := intstr.FromInt(0)
 	if rc.object.Spec.UpdateStrategy.RollingUpdate.Partition != nil {
