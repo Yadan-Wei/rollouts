@@ -229,7 +229,7 @@ func ParseWorkloadStatus(object client.Object) *WorkloadStatus {
 			UpdatedReplicas:   o.Status.UpdatedNumberScheduled,
 			//UpdatedReadyReplicas: o.Status.UpdatedReadyReplicas，
 			ObservedGeneration: o.Status.ObservedGeneration,
-			//UpdateRevision:     o.Status.DaemonSetHash,
+			UpdateRevision:     o.Status.DaemonSetHash,
 			//StableRevision:       o.Status.CurrentRevision,
 		}
 

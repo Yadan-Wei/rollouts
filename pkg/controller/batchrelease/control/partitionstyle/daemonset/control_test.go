@@ -11,7 +11,6 @@ import (
 	kruiseappsv1alpha1 "github.com/openkruise/kruise-api/apps/v1alpha1"
 	"github.com/openkruise/rollouts/api/v1alpha1"
 	batchcontext "github.com/openkruise/rollouts/pkg/controller/batchrelease/context"
-	"github.com/openkruise/rollouts/pkg/controller/batchrelease/labelpatch"
 	"github.com/openkruise/rollouts/pkg/util"
 	apps "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -55,11 +54,12 @@ var (
 			},
 
 			UpdateStrategy: kruiseappsv1alpha1.DaemonSetUpdateStrategy{
+				Type: "RollingUpdate",
 				RollingUpdate: &kruiseappsv1alpha1.RollingUpdateDaemonSet{
-					Paused:         true,
-					Partition:      &100%,
-					MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},},
-				
+					Paused:         pointer.Bool(true),
+					Partition:      pointer.Int32(10),
+					MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
+				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
@@ -78,15 +78,14 @@ var (
 			},
 		},
 		Status: kruiseappsv1alpha1.DaemonSetStatus{
-			Replicas:             10,
-			UpdatedReplicas:      0,
-			ReadyReplicas:        10,
-			AvailableReplicas:    10,
-			UpdatedReadyReplicas: 0,
-			UpdateRevision:       "version-2",
-			CurrentRevision:      "version-1",
-			ObservedGeneration:   1,
-			CollisionCount:       pointer.Int32Ptr(1),
+			CurrentNumberScheduled: 5,
+			NumberMisscheduled:     2,
+			DesiredNumberScheduled: 10,
+			NumberReady:            10,
+			ObservedGeneration:     1,
+			UpdatedNumberScheduled: 0,
+			NumberAvailable:        10,
+			CollisionCount:         pointer.Int32(1),
 		},
 	}
 
@@ -97,7 +96,7 @@ var (
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "release",
-			Namespace: cloneKey.Namespace,
+			Namespace: daemonKey.Namespace,
 			UID:       uuid.NewUUID(),
 		},
 		Spec: v1alpha1.BatchReleaseSpec{
@@ -116,9 +115,9 @@ var (
 			},
 			TargetRef: v1alpha1.ObjectRef{
 				WorkloadRef: &v1alpha1.WorkloadRef{
-					APIVersion: cloneDemo.APIVersion,
-					Kind:       cloneDemo.Kind,
-					Name:       cloneDemo.Name,
+					APIVersion: daemonDemo.APIVersion,
+					Kind:       daemonDemo.Kind,
+					Name:       daemonDemo.Name,
 				},
 			},
 		},
@@ -141,24 +140,26 @@ func TestCalculateBatchContext(t *testing.T) {
 
 	percent := intstr.FromString("20%")
 	cases := map[string]struct {
-		workload func() *kruiseappsv1alpha1.CloneSet
+		workload func() *kruiseappsv1alpha1.DaemonSet
 		release  func() *v1alpha1.BatchRelease
 		result   *batchcontext.BatchContext
 	}{
 		"without NoNeedUpdate": {
-			workload: func() *kruiseappsv1alpha1.CloneSet {
-				return &kruiseappsv1alpha1.CloneSet{
-					Spec: kruiseappsv1alpha1.CloneSetSpec{
-						Replicas: pointer.Int32Ptr(10),
-						UpdateStrategy: kruiseappsv1alpha1.CloneSetUpdateStrategy{
-							Partition: func() *intstr.IntOrString { p := intstr.FromString("100%"); return &p }(),
+			workload: func() *kruiseappsv1alpha1.DaemonSet {
+				return &kruiseappsv1alpha1.DaemonSet{
+					Spec: kruiseappsv1alpha1.DaemonSetSpec{
+						UpdateStrategy: kruiseappsv1alpha1.DaemonSetUpdateStrategy{
+							RollingUpdate: &kruiseappsv1alpha1.RollingUpdateDaemonSet{
+								Partition: pointer.Int32Ptr(10),
+							},
 						},
 					},
-					Status: kruiseappsv1alpha1.CloneSetStatus{
-						Replicas:             10,
-						UpdatedReplicas:      5,
-						UpdatedReadyReplicas: 5,
-						AvailableReplicas:    10,
+					Status: kruiseappsv1alpha1.DaemonSetStatus{
+						CurrentNumberScheduled: 10,
+						NumberMisscheduled:     5,
+						DesiredNumberScheduled: 5,
+						NumberReady:            10,
+						ObservedGeneration:     1,
 					},
 				}
 			},
@@ -194,61 +195,60 @@ func TestCalculateBatchContext(t *testing.T) {
 				DesiredPartition:       intstr.FromString("80%"),
 			},
 		},
-		"with NoNeedUpdate": {
-			workload: func() *kruiseappsv1alpha1.CloneSet {
-				return &kruiseappsv1alpha1.CloneSet{
-					Spec: kruiseappsv1alpha1.CloneSetSpec{
-						Replicas: pointer.Int32Ptr(20),
-						UpdateStrategy: kruiseappsv1alpha1.CloneSetUpdateStrategy{
-							Partition: func() *intstr.IntOrString { p := intstr.FromString("100%"); return &p }(),
-						},
-					},
-					Status: kruiseappsv1alpha1.CloneSetStatus{
-						Replicas:             20,
-						UpdatedReplicas:      10,
-						UpdatedReadyReplicas: 10,
-						AvailableReplicas:    20,
-						ReadyReplicas:        20,
-					},
-				}
-			},
-			release: func() *v1alpha1.BatchRelease {
-				r := &v1alpha1.BatchRelease{
-					Spec: v1alpha1.BatchReleaseSpec{
-						ReleasePlan: v1alpha1.ReleasePlan{
-							FailureThreshold: &percent,
-							Batches: []v1alpha1.ReleaseBatch{
-								{
-									CanaryReplicas: percent,
-								},
-							},
-						},
-					},
-					Status: v1alpha1.BatchReleaseStatus{
-						CanaryStatus: v1alpha1.BatchReleaseCanaryStatus{
-							CurrentBatch:         0,
-							NoNeedUpdateReplicas: pointer.Int32(10),
-						},
-						UpdateRevision: "update-version",
-					},
-				}
-				return r
-			},
-			result: &batchcontext.BatchContext{
-				CurrentBatch:           0,
-				UpdateRevision:         "update-version",
-				Replicas:               20,
-				UpdatedReplicas:        10,
-				UpdatedReadyReplicas:   10,
-				NoNeedUpdatedReplicas:  pointer.Int32Ptr(10),
-				PlannedUpdatedReplicas: 4,
-				DesiredUpdatedReplicas: 12,
-				CurrentPartition:       intstr.FromString("100%"),
-				DesiredPartition:       intstr.FromString("40%"),
-				FailureThreshold:       &percent,
-				FilterFunc:             labelpatch.FilterPodsForUnorderedUpdate,
-			},
-		},
+		// "with NoNeedUpdate": {
+		// 	workload: func() *kruiseappsv1alpha1.DaemonSet {
+		// 		return &kruiseappsv1alpha1.DaemonSet{
+		// 			Spec: kruiseappsv1alpha1.DaemonSetSpec{
+		// 				UpdateStrategy: kruiseappsv1alpha1.RollingUpdate{
+		// 					Partition: func() *intstr.IntOrString { p := intstr.FromString("100%"); return &p }(),
+		// 				},
+		// 			},
+		// 			Status: kruiseappsv1alpha1.CloneSetStatus{
+		// 				Replicas:             20,
+		// 				UpdatedReplicas:      10,
+		// 				UpdatedReadyReplicas: 10,
+		// 				AvailableReplicas:    20,
+		// 				ReadyReplicas:        20,
+		// 			},
+		// 		}
+		// 	},
+		// 	release: func() *v1alpha1.BatchRelease {
+		// 		r := &v1alpha1.BatchRelease{
+		// 			Spec: v1alpha1.BatchReleaseSpec{
+		// 				ReleasePlan: v1alpha1.ReleasePlan{
+		// 					FailureThreshold: &percent,
+		// 					Batches: []v1alpha1.ReleaseBatch{
+		// 						{
+		// 							CanaryReplicas: percent,
+		// 						},
+		// 					},
+		// 				},
+		// 			},
+		// 			Status: v1alpha1.BatchReleaseStatus{
+		// 				CanaryStatus: v1alpha1.BatchReleaseCanaryStatus{
+		// 					CurrentBatch:         0,
+		// 					NoNeedUpdateReplicas: pointer.Int32(10),
+		// 				},
+		// 				UpdateRevision: "update-version",
+		// 			},
+		// 		}
+		// 		return r
+		// 	},
+		// 	result: &batchcontext.BatchContext{
+		// 		CurrentBatch:           0,
+		// 		UpdateRevision:         "update-version",
+		// 		Replicas:               20,
+		// 		UpdatedReplicas:        10,
+		// 		UpdatedReadyReplicas:   10,
+		// 		NoNeedUpdatedReplicas:  pointer.Int32Ptr(10),
+		// 		PlannedUpdatedReplicas: 4,
+		// 		DesiredUpdatedReplicas: 12,
+		// 		CurrentPartition:       intstr.FromString("100%"),
+		// 		DesiredPartition:       intstr.FromString("40%"),
+		// 		FailureThreshold:       &percent,
+		// 		FilterFunc:             labelpatch.FilterPodsForUnorderedUpdate,
+		// 	},
+		// },
 	}
 
 	for name, cs := range cases {
@@ -269,17 +269,17 @@ func TestRealController(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	release := releaseDemo.DeepCopy()
-	clone := cloneDemo.DeepCopy()
-	cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(release, clone).Build()
-	c := NewController(cli, cloneKey, clone.GroupVersionKind()).(*realController)
+	daemon := daemonDemo.DeepCopy()
+	cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(release, daemon.DeepCopy()).Build()
+	c := NewController(cli, daemonKey, daemon.GroupVersionKind()).(*realController)
 	controller, err := c.BuildController()
 	Expect(err).NotTo(HaveOccurred())
 
 	err = controller.Initialize(release)
 	Expect(err).NotTo(HaveOccurred())
-	fetch := &kruiseappsv1alpha1.CloneSet{}
-	Expect(cli.Get(context.TODO(), cloneKey, fetch)).NotTo(HaveOccurred())
-	Expect(fetch.Spec.UpdateStrategy.Paused).Should(BeFalse())
+	fetch := &kruiseappsv1alpha1.DaemonSet{}
+	Expect(cli.Get(context.TODO(), daemonKey, fetch)).NotTo(HaveOccurred())
+	Expect(fetch.Spec.UpdateStrategy.RollingUpdate.Paused).Should(BeFalse())
 	Expect(fetch.Annotations[util.BatchReleaseControlAnnotation]).Should(Equal(getControlInfo(release)))
 	c.object = fetch // mock
 
@@ -287,39 +287,40 @@ func TestRealController(t *testing.T) {
 		batchContext, err := controller.CalculateBatchContext(release)
 		Expect(err).NotTo(HaveOccurred())
 		err = controller.UpgradeBatch(batchContext)
-		fetch = &kruiseappsv1alpha1.CloneSet{}
+		fetch = &kruiseappsv1alpha1.DaemonSet{}
 		// mock
-		Expect(cli.Get(context.TODO(), cloneKey, fetch)).NotTo(HaveOccurred())
+		Expect(cli.Get(context.TODO(), daemonKey, fetch)).NotTo(HaveOccurred())
 		c.object = fetch
 		if err == nil {
 			break
 		}
 	}
-	fetch = &kruiseappsv1alpha1.CloneSet{}
-	Expect(cli.Get(context.TODO(), cloneKey, fetch)).NotTo(HaveOccurred())
-	Expect(fetch.Spec.UpdateStrategy.Partition.StrVal).Should(Equal("90%"))
+	fetch = &kruiseappsv1alpha1.DaemonSet{}
+	Expect(cli.Get(context.TODO(), daemonKey, fetch)).NotTo(HaveOccurred())
+	Expect(fetch.Spec.UpdateStrategy.RollingUpdate.Partition).Should(Equal(9))
 
 	err = controller.Finalize(release)
 	Expect(err).NotTo(HaveOccurred())
-	fetch = &kruiseappsv1alpha1.CloneSet{}
-	Expect(cli.Get(context.TODO(), cloneKey, fetch)).NotTo(HaveOccurred())
+	fetch = &kruiseappsv1alpha1.DaemonSet{}
+	Expect(cli.Get(context.TODO(), daemonKey, fetch)).NotTo(HaveOccurred())
 	Expect(fetch.Annotations[util.BatchReleaseControlAnnotation]).Should(Equal(""))
 
 	stableInfo := controller.GetWorkloadInfo()
 	Expect(stableInfo).ShouldNot(BeNil())
-	checkWorkloadInfo(stableInfo, clone)
+	checkWorkloadInfo(stableInfo, daemon)
 }
 
-func checkWorkloadInfo(stableInfo *util.WorkloadInfo, clone *kruiseappsv1alpha1.CloneSet) {
-	Expect(stableInfo.Replicas).Should(Equal(*clone.Spec.Replicas))
-	Expect(stableInfo.Status.Replicas).Should(Equal(clone.Status.Replicas))
-	Expect(stableInfo.Status.ReadyReplicas).Should(Equal(clone.Status.ReadyReplicas))
-	Expect(stableInfo.Status.UpdatedReplicas).Should(Equal(clone.Status.UpdatedReplicas))
-	Expect(stableInfo.Status.UpdatedReadyReplicas).Should(Equal(clone.Status.UpdatedReadyReplicas))
-	Expect(stableInfo.Status.UpdateRevision).Should(Equal(clone.Status.UpdateRevision))
-	Expect(stableInfo.Status.StableRevision).Should(Equal(clone.Status.CurrentRevision))
-	Expect(stableInfo.Status.AvailableReplicas).Should(Equal(clone.Status.AvailableReplicas))
-	Expect(stableInfo.Status.ObservedGeneration).Should(Equal(clone.Status.ObservedGeneration))
+func checkWorkloadInfo(stableInfo *util.WorkloadInfo, daemon *kruiseappsv1alpha1.DaemonSet) {
+	Expect(stableInfo.Replicas).Should(Equal(daemon.Status.DesiredNumberScheduled))
+	Expect(stableInfo.Status.Replicas).Should(Equal(daemon.Status.DesiredNumberScheduled))
+	Expect(stableInfo.Status.ReadyReplicas).Should(Equal(daemon.Status.NumberReady))
+	Expect(stableInfo.Status.UpdatedReplicas).Should(Equal(daemon.Status.UpdatedNumberScheduled))
+	// how to compare here
+	//Expect(stableInfo.Status.UpdatedReadyReplicas).Should(Equal(daemon.Status.UpdatedReadyReplicas))
+	Expect(stableInfo.Status.UpdateRevision).Should(Equal(daemon.Status.DaemonSetHash))
+	//Expect(stableInfo.Status.StableRevision).Should(Equal(daemon.Status.CurrentRevision))
+	Expect(stableInfo.Status.AvailableReplicas).Should(Equal(daemon.Status.NumberAvailable))
+	Expect(stableInfo.Status.ObservedGeneration).Should(Equal(daemon.Status.ObservedGeneration))
 }
 
 func getControlInfo(release *v1alpha1.BatchRelease) string {
