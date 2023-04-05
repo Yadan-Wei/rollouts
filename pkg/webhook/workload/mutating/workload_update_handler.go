@@ -100,6 +100,30 @@ func (h *WorkloadHandler) Handle(ctx context.Context, req admission.Request) adm
 				return admission.Errored(http.StatusInternalServerError, err)
 			}
 			return admission.PatchResponseFromRaw(req.AdmissionRequest.Object.Raw, marshalled)
+		case util.ControllerKruiseKindDS.Kind:
+			// check daemonset
+			newObj := &kruiseappsv1alpha1.DaemonSet{}
+			if err := h.Decoder.Decode(req, newObj); err != nil {
+				return admission.Errored(http.StatusBadRequest, err)
+			}
+			oldObj := &kruiseappsv1alpha1.DaemonSet{}
+			if err := h.Decoder.Decode(
+				admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{Object: req.AdmissionRequest.OldObject}},
+				oldObj); err != nil {
+				return admission.Errored(http.StatusBadRequest, err)
+			}
+			changed, err := h.handleDaemonSet(newObj, oldObj)
+			if err != nil {
+				return admission.Errored(http.StatusBadRequest, err)
+			}
+			if !changed {
+				return admission.Allowed("")
+			}
+			marshalled, err := json.Marshal(newObj)
+			if err != nil {
+				return admission.Errored(http.StatusInternalServerError, err)
+			}
+			return admission.PatchResponseFromRaw(req.AdmissionRequest.Object.Raw, marshalled)
 		}
 
 	// native k8s deloyment
@@ -324,6 +348,35 @@ func (h *WorkloadHandler) handleCloneSet(newObj, oldObj *kruiseappsv1alpha1.Clon
 	}
 	newObj.Annotations[util.InRolloutProgressingAnnotation] = string(by)
 	klog.Infof("CloneSet(%s/%s) will be released incrementally based on Rollout(%s)", newObj.Namespace, newObj.Name, rollout.Name)
+	return true, nil
+}
+
+func (h *WorkloadHandler) handleDaemonSet(newObj, oldObj *kruiseappsv1alpha1.DaemonSet) (bool, error) {
+	// indicate whether the workload can enter the rollout process
+
+	if newObj.Annotations[appsv1alpha1.RolloutIDLabel] != "" &&
+		oldObj.Annotations[appsv1alpha1.RolloutIDLabel] == newObj.Annotations[appsv1alpha1.RolloutIDLabel] {
+		return false, nil
+	} else if newObj.Annotations[appsv1alpha1.RolloutIDLabel] == "" && util.EqualIgnoreHash(&oldObj.Spec.Template, &newObj.Spec.Template) {
+		return false, nil
+	}
+
+	rollout, err := h.fetchMatchedRollout(newObj)
+	if err != nil {
+		return false, err
+	} else if rollout == nil || rollout.Spec.Strategy.Canary == nil {
+		return false, nil
+	}
+
+	// why here we change partition and initialize we still need change
+	newObj.Spec.UpdateStrategy.RollingUpdate.Partition = &newObj.Status.DesiredNumberScheduled
+	state := &util.RolloutState{RolloutName: rollout.Name}
+	by, _ := json.Marshal(state)
+	if newObj.Annotations == nil {
+		newObj.Annotations = map[string]string{}
+	}
+	newObj.Annotations[util.InRolloutProgressingAnnotation] = string(by)
+	klog.Infof("DaemonSet(%s/%s) will be released incrementally based on Rollout(%s)", newObj.Namespace, newObj.Name, rollout.Name)
 	return true, nil
 }
 
