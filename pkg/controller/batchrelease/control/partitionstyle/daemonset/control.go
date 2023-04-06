@@ -22,15 +22,16 @@ type realController struct {
 	client client.Client
 	pods   []*corev1.Pod
 	key    types.NamespacedName
-	// question 1 : here is DaemonSet or Advanced DaemonSet *apps.DaemonSet *kruiseappsv1alpha1.DaemonSet
+	gvk    schema.GroupVersionKind
 	object *kruiseappsv1alpha1.DaemonSet
 	//
 }
 
-func NewController(cli client.Client, key types.NamespacedName, _ schema.GroupVersionKind) partitionstyle.Interface {
+func NewController(cli client.Client, key types.NamespacedName, gvk schema.GroupVersionKind) partitionstyle.Interface {
 	return &realController{
 		key:    key,
 		client: cli,
+		gvk:    gvk,
 	}
 }
 
@@ -70,6 +71,7 @@ func (rc *realController) BuildController() (partitionstyle.Interface, error) {
 			}
 			return util.IsPodReady(pod)
 		})
+		fmt.Println(updatedReadyReplicas)
 		rc.WorkloadInfo.Status.UpdatedReadyReplicas = int32(updatedReadyReplicas)
 	}
 	return rc, nil
@@ -94,8 +96,9 @@ func (rc *realController) Initialize(release *v1alpha1.BatchRelease) error {
 
 	daemon := util.GetEmptyObjectWithKey(rc.object)
 	owner := control.BuildReleaseControlInfo(release)
-	body := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}},"spec":{"updateStrategy":{"RollingUpdate":{"paused":%v,"partition":%d}}}}`,
+	body := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}},"spec":{"updateStrategy":{"rollingUpdate":{"paused":%v,"partition":%d}}}}`,
 		util.BatchReleaseControlAnnotation, owner, false, rc.Replicas)
+
 	return rc.client.Patch(context.TODO(), daemon, client.RawPatch(types.MergePatchType, []byte(body)))
 }
 
@@ -123,7 +126,7 @@ func (rc *realController) Finalize(release *v1alpha1.BatchRelease) error {
 	var specBody string
 	// if batchPartition == nil, workload should be promoted.
 	if release.Spec.ReleasePlan.BatchPartition == nil {
-		specBody = `,"spec":{"updateStrategy":{"RollingUpdate": {"partition":null,"paused":false}}}`
+		specBody = `,"spec":{"updateStrategy":{"rollingUpdate": {"partition":null,"paused":false}}}`
 	}
 
 	body := fmt.Sprintf(`{"metadata":{"annotations":{"%s":null}}%s}`, util.BatchReleaseControlAnnotation, specBody)
@@ -177,12 +180,12 @@ func (rc *realController) CalculateBatchContext(release *v1alpha1.BatchRelease) 
 		RolloutID:    rolloutID,
 		CurrentBatch: currentBatch,
 		//UpdateRevision:   release.Status.UpdateRevision,
-		DesiredPartition: desiredPartition,
-		CurrentPartition: currentPartition,
-		FailureThreshold: release.Spec.ReleasePlan.FailureThreshold,
-		Replicas:         rc.Replicas,
-		UpdatedReplicas:  rc.Status.UpdatedReplicas,
-		//UpdatedReadyReplicas:   rc.Status.UpdatedReadyReplicas,
+		DesiredPartition:     desiredPartition,
+		CurrentPartition:     currentPartition,
+		FailureThreshold:     release.Spec.ReleasePlan.FailureThreshold,
+		Replicas:             rc.Replicas,
+		UpdatedReplicas:      rc.Status.UpdatedReplicas,
+		UpdatedReadyReplicas: rc.Status.UpdatedReadyReplicas,
 		//NoNeedUpdatedReplicas:  noNeedUpdate,
 		PlannedUpdatedReplicas: plannedUpdate,
 		DesiredUpdatedReplicas: desiredUpdate,

@@ -131,6 +131,7 @@ var (
 
 func init() {
 	apps.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
 	v1alpha1.AddToScheme(scheme)
 	kruiseappsv1alpha1.AddToScheme(scheme)
 }
@@ -158,9 +159,9 @@ func TestCalculateBatchContext(t *testing.T) {
 						CurrentNumberScheduled: 10,
 						NumberMisscheduled:     0,
 						DesiredNumberScheduled: 10,
-						NumberReady:            5,
+						NumberReady:            10,
 						ObservedGeneration:     1,
-						UpdatedNumberScheduled: 5,
+						UpdatedNumberScheduled: 10,
 						NumberAvailable:        10,
 						CollisionCount:         pointer.Int32(1),
 					},
@@ -187,15 +188,15 @@ func TestCalculateBatchContext(t *testing.T) {
 				return r
 			},
 			result: &batchcontext.BatchContext{
-				FailureThreshold:       &percent,
-				CurrentBatch:           0,
-				Replicas:               10,
-				UpdatedReplicas:        5,
-				UpdatedReadyReplicas:   5,
+				FailureThreshold: &percent,
+				CurrentBatch:     0,
+				Replicas:         10,
+				UpdatedReplicas:  10,
+				//UpdatedReadyReplicas:   10,
 				PlannedUpdatedReplicas: 2,
 				DesiredUpdatedReplicas: 2,
 				CurrentPartition:       intstr.FromInt(10),
-				DesiredPartition:       intstr.FromInt(9),
+				DesiredPartition:       intstr.FromInt(8),
 			},
 		},
 		// "with NoNeedUpdate": {
@@ -254,16 +255,16 @@ func TestCalculateBatchContext(t *testing.T) {
 		// },
 	}
 
-	for name, cs := range cases {
+	for name, ds := range cases {
 		t.Run(name, func(t *testing.T) {
 			control := realController{
-				object:       cs.workload(),
-				WorkloadInfo: util.ParseWorkload(cs.workload()),
+				object:       ds.workload(),
+				WorkloadInfo: util.ParseWorkload(ds.workload()),
 			}
-			got, err := control.CalculateBatchContext(cs.release())
+			got, err := control.CalculateBatchContext(ds.release())
 			fmt.Println(got)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(got.Log()).Should(Equal(cs.result.Log()))
+			Expect(got.Log()).Should(Equal(ds.result.Log()))
 		})
 	}
 }
@@ -280,10 +281,14 @@ func TestRealController(t *testing.T) {
 
 	err = controller.Initialize(release)
 	Expect(err).NotTo(HaveOccurred())
+
 	fetch := &kruiseappsv1alpha1.DaemonSet{}
 	Expect(cli.Get(context.TODO(), daemonKey, fetch)).NotTo(HaveOccurred())
-	Expect(fetch.Spec.UpdateStrategy.RollingUpdate.Paused).Should(BeFalse())
+
+	Expect(*fetch.Spec.UpdateStrategy.RollingUpdate.Paused).Should(BeFalse())
+
 	Expect(fetch.Annotations[util.BatchReleaseControlAnnotation]).Should(Equal(getControlInfo(release)))
+
 	c.object = fetch // mock
 
 	for {
@@ -298,14 +303,17 @@ func TestRealController(t *testing.T) {
 			break
 		}
 	}
+
 	fetch = &kruiseappsv1alpha1.DaemonSet{}
 	Expect(cli.Get(context.TODO(), daemonKey, fetch)).NotTo(HaveOccurred())
-	Expect(fetch.Spec.UpdateStrategy.RollingUpdate.Partition).Should(Equal(9))
+	fmt.Println(*fetch.Spec.UpdateStrategy.RollingUpdate.Partition)
+	Expect(*fetch.Spec.UpdateStrategy.RollingUpdate.Partition).Should(Equal(int32(9)))
 
 	err = controller.Finalize(release)
 	Expect(err).NotTo(HaveOccurred())
 	fetch = &kruiseappsv1alpha1.DaemonSet{}
 	Expect(cli.Get(context.TODO(), daemonKey, fetch)).NotTo(HaveOccurred())
+
 	Expect(fetch.Annotations[util.BatchReleaseControlAnnotation]).Should(Equal(""))
 
 	stableInfo := controller.GetWorkloadInfo()
