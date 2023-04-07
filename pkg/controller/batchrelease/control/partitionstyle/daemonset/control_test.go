@@ -263,6 +263,7 @@ func TestCalculateBatchContext(t *testing.T) {
 			}
 			got, err := control.CalculateBatchContext(ds.release())
 			fmt.Println(got)
+			fmt.Println(got.Log())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(got.Log()).Should(Equal(ds.result.Log()))
 		})

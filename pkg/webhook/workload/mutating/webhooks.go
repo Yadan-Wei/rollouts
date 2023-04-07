@@ -29,10 +29,11 @@ import (
 var (
 	// HandlerMap contains admission webhook handlers
 	HandlerMap = map[string]admission.Handler{
-		"mutate-apps-kruise-io-v1alpha1-cloneset": &WorkloadHandler{},
-		"mutate-apps-v1-deployment":               &WorkloadHandler{},
-		"mutate-apps-v1-statefulset":              &WorkloadHandler{},
-		"mutate-apps-kruise-io-statefulset":       &WorkloadHandler{},
-		"mutate-unified-workload":                 &WorkloadHandler{},
+		"mutate-apps-kruise-io-v1alpha1-cloneset":  &WorkloadHandler{},
+		"mutate-apps-v1-deployment":                &WorkloadHandler{},
+		"mutate-apps-v1-statefulset":               &WorkloadHandler{},
+		"mutate-apps-kruise-io-statefulset":        &WorkloadHandler{},
+		"mutate-unified-workload":                  &WorkloadHandler{},
+		"mutate-apps-kruise-io-v1alpha1-daemonset": &WorkloadHandler{},
 	}
 )
