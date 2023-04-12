@@ -18,8 +18,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -144,11 +146,18 @@ func TestCalculateBatchContext(t *testing.T) {
 		workload func() *kruiseappsv1alpha1.DaemonSet
 		release  func() *v1alpha1.BatchRelease
 		result   *batchcontext.BatchContext
+		pods     func() []*corev1.Pod
 	}{
 		"without NoNeedUpdate": {
 			workload: func() *kruiseappsv1alpha1.DaemonSet {
 				return &kruiseappsv1alpha1.DaemonSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-ds",
+						Namespace: "test",
+						UID:       "test",
+					},
 					Spec: kruiseappsv1alpha1.DaemonSetSpec{
+						Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "foo"}},
 						UpdateStrategy: kruiseappsv1alpha1.DaemonSetUpdateStrategy{
 							RollingUpdate: &kruiseappsv1alpha1.RollingUpdateDaemonSet{
 								Partition: pointer.Int32Ptr(10),
@@ -161,14 +170,24 @@ func TestCalculateBatchContext(t *testing.T) {
 						DesiredNumberScheduled: 10,
 						NumberReady:            10,
 						ObservedGeneration:     1,
-						UpdatedNumberScheduled: 10,
+						UpdatedNumberScheduled: 5,
 						NumberAvailable:        10,
 						CollisionCount:         pointer.Int32(1),
+						DaemonSetHash:          "update-version",
 					},
 				}
 			},
+			pods: func() []*corev1.Pod {
+				stablePods := generatePods(5, "stable-version", "True")
+				updatedReadyPods := generatePods(5, "update-version", "True")
+				return append(stablePods, updatedReadyPods...)
+			},
 			release: func() *v1alpha1.BatchRelease {
 				r := &v1alpha1.BatchRelease{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-br",
+						Namespace: "test",
+					},
 					Spec: v1alpha1.BatchReleaseSpec{
 						ReleasePlan: v1alpha1.ReleasePlan{
 							FailureThreshold: &percent,
@@ -183,20 +202,22 @@ func TestCalculateBatchContext(t *testing.T) {
 						CanaryStatus: v1alpha1.BatchReleaseCanaryStatus{
 							CurrentBatch: 0,
 						},
+						UpdateRevision: "update-version",
 					},
 				}
 				return r
 			},
 			result: &batchcontext.BatchContext{
-				FailureThreshold: &percent,
-				CurrentBatch:     0,
-				Replicas:         10,
-				UpdatedReplicas:  10,
-				//UpdatedReadyReplicas:   10,
+				FailureThreshold:       &percent,
+				CurrentBatch:           0,
+				Replicas:               10,
+				UpdatedReplicas:        5,
+				UpdatedReadyReplicas:   5,
 				PlannedUpdatedReplicas: 2,
 				DesiredUpdatedReplicas: 2,
 				CurrentPartition:       intstr.FromInt(10),
 				DesiredPartition:       intstr.FromInt(8),
+				Pods:                   generatePods(10, "", ""),
 			},
 		},
 		// "with NoNeedUpdate": {
@@ -255,17 +276,32 @@ func TestCalculateBatchContext(t *testing.T) {
 		// },
 	}
 
-	for name, ds := range cases {
+	for name, cs := range cases {
 		t.Run(name, func(t *testing.T) {
+			pods := func() []client.Object {
+				var objects []client.Object
+				pods := cs.pods()
+				for _, pod := range pods {
+					objects = append(objects, pod)
+				}
+				return objects
+			}()
+			br := cs.release()
+			daemon := cs.workload()
+			cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(br, daemon).WithObjects(pods...).Build()
 			control := realController{
-				object:       ds.workload(),
-				WorkloadInfo: util.ParseWorkload(ds.workload()),
+				client: cli,
+				gvk:    daemon.GroupVersionKind(),
+				key:    types.NamespacedName{Namespace: "test", Name: "test-ds"},
 			}
-			got, err := control.CalculateBatchContext(ds.release())
-			fmt.Println(got)
-			fmt.Println(got.Log())
+			controller, err := control.BuildController()
+			//fmt.Println(err)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(got.Log()).Should(Equal(ds.result.Log()))
+			got, err := controller.CalculateBatchContext(cs.release())
+			fmt.Println(got.Log())
+			fmt.Println(cs.result.Log())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Log()).Should(Equal(cs.result.Log()))
 		})
 	}
 }
@@ -338,4 +374,32 @@ func checkWorkloadInfo(stableInfo *util.WorkloadInfo, daemon *kruiseappsv1alpha1
 func getControlInfo(release *v1alpha1.BatchRelease) string {
 	owner, _ := json.Marshal(metav1.NewControllerRef(release, release.GetObjectKind().GroupVersionKind()))
 	return string(owner)
+}
+
+func generatePods(replicas int, version, readyStatus string) []*corev1.Pod {
+	var pods []*corev1.Pod
+	for replicas > 0 {
+		pods = append(pods, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "test",
+				Name:      fmt.Sprintf("pod-%s", rand.String(10)),
+				Labels: map[string]string{
+					"app":                               "foo",
+					apps.ControllerRevisionHashLabelKey: version,
+				},
+				OwnerReferences: []metav1.OwnerReference{{
+					UID:        "test",
+					Controller: pointer.Bool(true),
+				}},
+			},
+			Status: corev1.PodStatus{
+				Conditions: []corev1.PodCondition{{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionStatus(readyStatus),
+				}},
+			},
+		})
+		replicas--
+	}
+	return pods
 }

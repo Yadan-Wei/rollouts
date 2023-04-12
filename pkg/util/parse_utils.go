@@ -223,11 +223,10 @@ func ParseWorkloadStatus(object client.Object) *WorkloadStatus {
 
 	case *appsv1alpha1.DaemonSet:
 		return &WorkloadStatus{
-			Replicas:          o.Status.DesiredNumberScheduled,
-			ReadyReplicas:     o.Status.NumberReady,
-			AvailableReplicas: o.Status.NumberAvailable,
-			UpdatedReplicas:   o.Status.UpdatedNumberScheduled,
-			//UpdatedReadyReplicas: o.Status.UpdatedReadyReplicas，
+			Replicas:           o.Status.DesiredNumberScheduled,
+			ReadyReplicas:      o.Status.NumberReady,
+			AvailableReplicas:  o.Status.NumberAvailable,
+			UpdatedReplicas:    o.Status.UpdatedNumberScheduled,
 			ObservedGeneration: o.Status.ObservedGeneration,
 			UpdateRevision:     o.Status.DaemonSetHash,
 			//StableRevision:       o.Status.CurrentRevision,

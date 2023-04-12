@@ -196,7 +196,6 @@ func (r *ControllerFinder) getKruiseDaemonSet(namespace string, ref *rolloutv1al
 		return &Workload{IsStatusConsistent: false}, nil
 	}
 	workload := &Workload{
-		// what's this
 		RevisionLabelKey: apps.DefaultDeploymentUniqueLabelKey,
 		//StableRevision:     daemonSet.Status.CurrentRevision[strings.LastIndex(cloneSet.Status.CurrentRevision, "-")+1:],
 		CanaryRevision:     daemonSet.Status.DaemonSetHash[strings.LastIndex(daemonSet.Status.DaemonSetHash, "-")+1:],

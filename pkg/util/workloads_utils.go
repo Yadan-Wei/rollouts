@@ -55,6 +55,7 @@ var (
 		&ControllerKruiseKindCS,
 		&ControllerKruiseKindSts,
 		&ControllerKruiseOldKindSts,
+		&ControllerKruiseKindDS,
 	}
 )
 
@@ -210,6 +211,8 @@ func GetEmptyWorkloadObject(gvk schema.GroupVersionKind) client.Object {
 	switch gvk {
 	case ControllerKindRS:
 		return &apps.ReplicaSet{}
+	case ControllerKruiseKindDS:
+		return &appsv1alpha1.DaemonSet{}
 	case ControllerKindDep:
 		return &apps.Deployment{}
 	case ControllerKruiseKindCS:
