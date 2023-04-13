@@ -369,7 +369,6 @@ func (h *WorkloadHandler) handleDaemonSet(newObj, oldObj *kruiseappsv1alpha1.Dae
 		return false, nil
 	}
 
-	// why here we change partition and initialize we still need change
 	newObj.Spec.UpdateStrategy.RollingUpdate.Partition = pointer.Int32(math.MaxInt16)
 	state := &util.RolloutState{RolloutName: rollout.Name}
 	by, _ := json.Marshal(state)
