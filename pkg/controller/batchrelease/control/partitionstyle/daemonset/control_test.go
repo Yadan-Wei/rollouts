@@ -11,6 +11,7 @@ import (
 	kruiseappsv1alpha1 "github.com/openkruise/kruise-api/apps/v1alpha1"
 	"github.com/openkruise/rollouts/api/v1alpha1"
 	batchcontext "github.com/openkruise/rollouts/pkg/controller/batchrelease/context"
+	"github.com/openkruise/rollouts/pkg/controller/batchrelease/labelpatch"
 	"github.com/openkruise/rollouts/pkg/util"
 	apps "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -215,65 +216,89 @@ func TestCalculateBatchContext(t *testing.T) {
 				UpdatedReadyReplicas:   5,
 				PlannedUpdatedReplicas: 2,
 				DesiredUpdatedReplicas: 2,
+				UpdateRevision:         "update-version",
 				CurrentPartition:       intstr.FromInt(10),
 				DesiredPartition:       intstr.FromInt(8),
 				Pods:                   generatePods(10, "", ""),
 			},
 		},
-		// "with NoNeedUpdate": {
-		// 	workload: func() *kruiseappsv1alpha1.DaemonSet {
-		// 		return &kruiseappsv1alpha1.DaemonSet{
-		// 			Spec: kruiseappsv1alpha1.DaemonSetSpec{
-		// 				UpdateStrategy: kruiseappsv1alpha1.RollingUpdate{
-		// 					Partition: func() *intstr.IntOrString { p := intstr.FromString("100%"); return &p }(),
-		// 				},
-		// 			},
-		// 			Status: kruiseappsv1alpha1.CloneSetStatus{
-		// 				Replicas:             20,
-		// 				UpdatedReplicas:      10,
-		// 				UpdatedReadyReplicas: 10,
-		// 				AvailableReplicas:    20,
-		// 				ReadyReplicas:        20,
-		// 			},
-		// 		}
-		// 	},
-		// 	release: func() *v1alpha1.BatchRelease {
-		// 		r := &v1alpha1.BatchRelease{
-		// 			Spec: v1alpha1.BatchReleaseSpec{
-		// 				ReleasePlan: v1alpha1.ReleasePlan{
-		// 					FailureThreshold: &percent,
-		// 					Batches: []v1alpha1.ReleaseBatch{
-		// 						{
-		// 							CanaryReplicas: percent,
-		// 						},
-		// 					},
-		// 				},
-		// 			},
-		// 			Status: v1alpha1.BatchReleaseStatus{
-		// 				CanaryStatus: v1alpha1.BatchReleaseCanaryStatus{
-		// 					CurrentBatch:         0,
-		// 					NoNeedUpdateReplicas: pointer.Int32(10),
-		// 				},
-		// 				UpdateRevision: "update-version",
-		// 			},
-		// 		}
-		// 		return r
-		// 	},
-		// 	result: &batchcontext.BatchContext{
-		// 		CurrentBatch:           0,
-		// 		UpdateRevision:         "update-version",
-		// 		Replicas:               20,
-		// 		UpdatedReplicas:        10,
-		// 		UpdatedReadyReplicas:   10,
-		// 		NoNeedUpdatedReplicas:  pointer.Int32Ptr(10),
-		// 		PlannedUpdatedReplicas: 4,
-		// 		DesiredUpdatedReplicas: 12,
-		// 		CurrentPartition:       intstr.FromString("100%"),
-		// 		DesiredPartition:       intstr.FromString("40%"),
-		// 		FailureThreshold:       &percent,
-		// 		FilterFunc:             labelpatch.FilterPodsForUnorderedUpdate,
-		// 	},
-		// },
+		"with NoNeedUpdate": {
+			workload: func() *kruiseappsv1alpha1.DaemonSet {
+				return &kruiseappsv1alpha1.DaemonSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-ds",
+						Namespace: "test",
+						UID:       "test",
+					},
+					Spec: kruiseappsv1alpha1.DaemonSetSpec{
+						Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "foo"}},
+						UpdateStrategy: kruiseappsv1alpha1.DaemonSetUpdateStrategy{
+							RollingUpdate: &kruiseappsv1alpha1.RollingUpdateDaemonSet{
+								Partition: pointer.Int32Ptr(10),
+							},
+						},
+					},
+					Status: kruiseappsv1alpha1.DaemonSetStatus{
+						CurrentNumberScheduled: 10,
+						NumberMisscheduled:     0,
+						DesiredNumberScheduled: 10,
+						NumberReady:            10,
+						ObservedGeneration:     1,
+						UpdatedNumberScheduled: 5,
+						NumberAvailable:        10,
+						CollisionCount:         pointer.Int32(1),
+						DaemonSetHash:          "update-version",
+					},
+				}
+			},
+			pods: func() []*corev1.Pod {
+				stablePods := generatePods(5, "stable-version", "True")
+				updatedReadyPods := generatePods(5, "update-version", "True")
+				return append(stablePods, updatedReadyPods...)
+			},
+			release: func() *v1alpha1.BatchRelease {
+
+				r := &v1alpha1.BatchRelease{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-br",
+						Namespace: "test",
+					},
+					Spec: v1alpha1.BatchReleaseSpec{
+						ReleasePlan: v1alpha1.ReleasePlan{
+							FailureThreshold: &percent,
+							Batches: []v1alpha1.ReleaseBatch{
+								{
+									CanaryReplicas: percent,
+								},
+							},
+						},
+					},
+					Status: v1alpha1.BatchReleaseStatus{
+						CanaryStatus: v1alpha1.BatchReleaseCanaryStatus{
+							CurrentBatch:         0,
+							NoNeedUpdateReplicas: pointer.Int32(5),
+						},
+						UpdateRevision: "update-version",
+					},
+				}
+				return r
+			},
+			result: &batchcontext.BatchContext{
+				CurrentBatch:           0,
+				UpdateRevision:         "update-version",
+				Replicas:               10,
+				UpdatedReplicas:        5,
+				UpdatedReadyReplicas:   5,
+				NoNeedUpdatedReplicas:  pointer.Int32Ptr(5),
+				PlannedUpdatedReplicas: 2,
+				DesiredUpdatedReplicas: 6,
+				CurrentPartition:       intstr.FromInt(10),
+				DesiredPartition:       intstr.FromInt(4),
+				FailureThreshold:       &percent,
+				FilterFunc:             labelpatch.FilterPodsForUnorderedUpdate,
+				Pods:                   generatePods(10, "", ""),
+			},
+		},
 	}
 
 	for name, cs := range cases {
@@ -295,7 +320,7 @@ func TestCalculateBatchContext(t *testing.T) {
 				key:    types.NamespacedName{Namespace: "test", Name: "test-ds"},
 			}
 			controller, err := control.BuildController()
-			//fmt.Println(err)
+			fmt.Println(err)
 			Expect(err).NotTo(HaveOccurred())
 			got, err := controller.CalculateBatchContext(cs.release())
 			fmt.Println(got.Log())

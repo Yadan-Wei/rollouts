@@ -9,6 +9,7 @@ import (
 	batchcontext "github.com/openkruise/rollouts/pkg/controller/batchrelease/context"
 	"github.com/openkruise/rollouts/pkg/controller/batchrelease/control"
 	"github.com/openkruise/rollouts/pkg/controller/batchrelease/control/partitionstyle"
+	"github.com/openkruise/rollouts/pkg/controller/batchrelease/labelpatch"
 	"github.com/openkruise/rollouts/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -148,7 +149,7 @@ func (rc *realController) CalculateBatchContext(release *v1alpha1.BatchRelease) 
 	// current batch index
 	currentBatch := release.Status.CanaryStatus.CurrentBatch
 	// the number of no need update pods that marked before rollout
-	// noNeedUpdate := release.Status.CanaryStatus.NoNeedUpdateReplicas
+	noNeedUpdate := release.Status.CanaryStatus.NoNeedUpdateReplicas
 	// the number of upgraded pods according to release plan in current batch.
 	plannedUpdate := int32(control.CalculateBatchReplicas(release, int(rc.Replicas), int(currentBatch)))
 	// the number of pods that should be upgraded in real
@@ -156,12 +157,12 @@ func (rc *realController) CalculateBatchContext(release *v1alpha1.BatchRelease) 
 	// the number of pods that should not be upgraded in real
 	desiredStable := rc.Replicas - desiredUpdate
 	// if we should consider the no-need-update pods that were marked before progressing
-	// if noNeedUpdate != nil && *noNeedUpdate > 0 {
-	// 	// specially, we should ignore the pods that were marked as no-need-update, this logic is for Rollback scene
-	// 	desiredUpdateNew := int32(control.CalculateBatchReplicas(release, int(rc.Replicas-*noNeedUpdate), int(currentBatch)))
-	// 	desiredStable = rc.Replicas - *noNeedUpdate - desiredUpdateNew
-	// 	desiredUpdate = rc.Replicas - desiredStable
-	// }
+	if noNeedUpdate != nil && *noNeedUpdate > 0 {
+		// specially, we should ignore the pods that were marked as no-need-update, this logic is for Rollback scene
+		desiredUpdateNew := int32(control.CalculateBatchReplicas(release, int(rc.Replicas-*noNeedUpdate), int(currentBatch)))
+		desiredStable = rc.Replicas - *noNeedUpdate - desiredUpdateNew
+		desiredUpdate = rc.Replicas - desiredStable
+	}
 
 	// make sure at least one pod is upgrade is canaryReplicas is not "0%"
 	desiredPartition := intstr.FromInt(int(desiredStable))
@@ -176,23 +177,23 @@ func (rc *realController) CalculateBatchContext(release *v1alpha1.BatchRelease) 
 	}
 
 	batchContext := &batchcontext.BatchContext{
-		Pods:         rc.pods,
-		RolloutID:    rolloutID,
-		CurrentBatch: currentBatch,
-		//UpdateRevision:   release.Status.UpdateRevision,
-		DesiredPartition:     desiredPartition,
-		CurrentPartition:     currentPartition,
-		FailureThreshold:     release.Spec.ReleasePlan.FailureThreshold,
-		Replicas:             rc.Replicas,
-		UpdatedReplicas:      rc.Status.UpdatedReplicas,
-		UpdatedReadyReplicas: rc.Status.UpdatedReadyReplicas,
-		//NoNeedUpdatedReplicas:  noNeedUpdate,
+		Pods:                   rc.pods,
+		RolloutID:              rolloutID,
+		CurrentBatch:           currentBatch,
+		UpdateRevision:         release.Status.UpdateRevision,
+		DesiredPartition:       desiredPartition,
+		CurrentPartition:       currentPartition,
+		FailureThreshold:       release.Spec.ReleasePlan.FailureThreshold,
+		Replicas:               rc.Replicas,
+		UpdatedReplicas:        rc.Status.UpdatedReplicas,
+		UpdatedReadyReplicas:   rc.Status.UpdatedReadyReplicas,
+		NoNeedUpdatedReplicas:  noNeedUpdate,
 		PlannedUpdatedReplicas: plannedUpdate,
 		DesiredUpdatedReplicas: desiredUpdate,
 	}
 
-	// if noNeedUpdate != nil {
-	// 	batchContext.FilterFunc = labelpatch.FilterPodsForUnorderedUpdate
-	// }
+	if noNeedUpdate != nil {
+		batchContext.FilterFunc = labelpatch.FilterPodsForUnorderedUpdate
+	}
 	return batchContext, nil
 }
