@@ -53,10 +53,11 @@ const (
 	// of "bad words" being formed.
 	alphanums = "bcdfghjklmnpqrstvwxz2456789"
 
-	// CloneSetType DeploymentType and StatefulSetType are values to WorkloadTypeLabel
+	// CloneSetType DeploymentType DaemonSetType and StatefulSetType are values to WorkloadTypeLabel
 	CloneSetType    WorkloadType = "cloneset"
 	DeploymentType  WorkloadType = "deployment"
 	StatefulSetType WorkloadType = "statefulset"
+	DaemonSetType   WorkloadType = "daemonset"
 
 	AddFinalizerOpType    FinalizerOpType = "Add"
 	RemoveFinalizerOpType FinalizerOpType = "Remove"

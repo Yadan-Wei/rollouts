@@ -54,7 +54,7 @@ func (rc *realController) BuildController() (partitionstyle.Interface, error) {
 	rc.object = object
 
 	//update this function
-	rc.WorkloadInfo = util.ParseWorkload(object)
+	rc.WorkloadInfo = rc.getWorkloadInfo(object)
 
 	// for Advanced DaemonSet which has no updatedReadyReplicas field, we should
 	// list and count its owned Pods one by one.
@@ -196,4 +196,11 @@ func (rc *realController) CalculateBatchContext(release *v1alpha1.BatchRelease) 
 		batchContext.FilterFunc = labelpatch.FilterPodsForUnorderedUpdate
 	}
 	return batchContext, nil
+}
+
+// helper function to get stable revision
+func (rc *realController) getWorkloadInfo(d *kruiseappsv1alpha1.DaemonSet) *util.WorkloadInfo {
+	workloadInfo := util.ParseWorkload(d)
+	workloadInfo.Status.StableRevision = d.Labels[v1alpha1.DeploymentStableRevisionLabel]
+	return workloadInfo
 }

@@ -369,6 +369,14 @@ func (h *WorkloadHandler) handleDaemonSet(newObj, oldObj *kruiseappsv1alpha1.Dae
 		return false, nil
 	}
 
+	// label the stable version
+	if oldObj.Status.UpdatedNumberScheduled == oldObj.Status.CurrentNumberScheduled {
+		if newObj.Labels == nil {
+			newObj.Labels = map[string]string{}
+		}
+		newObj.Labels[appsv1alpha1.DeploymentStableRevisionLabel] = oldObj.Status.DaemonSetHash
+	}
+
 	newObj.Spec.UpdateStrategy.RollingUpdate.Partition = pointer.Int32(math.MaxInt16)
 	state := &util.RolloutState{RolloutName: rollout.Name}
 	by, _ := json.Marshal(state)

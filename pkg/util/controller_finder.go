@@ -78,6 +78,8 @@ func NewControllerFinder(c client.Client) *ControllerFinder {
 
 // +kubebuilder:rbac:groups=apps.kruise.io,resources=clonesets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.kruise.io,resources=clonesets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=apps.kruise.io,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps.kruise.io,resources=daemonsets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch;create;update;patch;delete
@@ -179,12 +181,15 @@ func (r *ControllerFinder) getKruiseCloneSet(namespace string, ref *rolloutv1alp
 
 func (r *ControllerFinder) getKruiseDaemonSet(namespace string, ref *rolloutv1alpha1.WorkloadRef) (*Workload, error) {
 	// This error is irreversible, so there is no need to return error
+	klog.Infof("******1:")
 	ok, _ := verifyGroupKind(ref, ControllerKruiseKindDS.Kind, []string{ControllerKruiseKindDS.Group})
 	if !ok {
 		return nil, nil
 	}
+	klog.Infof("******2:")
 	daemonSet := &appsv1alpha1.DaemonSet{}
 	err := r.Get(context.TODO(), client.ObjectKey{Namespace: namespace, Name: ref.Name}, daemonSet)
+	klog.Infof("******3:")
 	if err != nil {
 		// when error is NotFound, it is ok here.
 		if errors.IsNotFound(err) {
@@ -192,30 +197,40 @@ func (r *ControllerFinder) getKruiseDaemonSet(namespace string, ref *rolloutv1al
 		}
 		return nil, err
 	}
+	klog.Infof("******4:")
+
 	if daemonSet.Generation != daemonSet.Status.ObservedGeneration {
 		return &Workload{IsStatusConsistent: false}, nil
 	}
+	klog.Infof("******5:")
+	stableRevision := daemonSet.Labels[rolloutv1alpha1.DeploymentStableRevisionLabel]
+
 	workload := &Workload{
-		RevisionLabelKey: apps.DefaultDeploymentUniqueLabelKey,
-		//StableRevision:     daemonSet.Status.CurrentRevision[strings.LastIndex(cloneSet.Status.CurrentRevision, "-")+1:],
-		CanaryRevision:     daemonSet.Status.DaemonSetHash[strings.LastIndex(daemonSet.Status.DaemonSetHash, "-")+1:],
+		RevisionLabelKey:   apps.DefaultDeploymentUniqueLabelKey,
+		StableRevision:     stableRevision,
+		CanaryRevision:     daemonSet.Status.DaemonSetHash,
 		ObjectMeta:         daemonSet.ObjectMeta,
 		Replicas:           daemonSet.Status.DesiredNumberScheduled,
-		PodTemplateHash:    daemonSet.Status.DaemonSetHash[strings.LastIndex(daemonSet.Status.DaemonSetHash, "-")+1:],
+		PodTemplateHash:    daemonSet.Status.DaemonSetHash,
 		IsStatusConsistent: true,
 	}
+
+	klog.Infof("******1:DaemonSet(%s/%s) workload StableRevision(%s), canary revision(%s)*******", daemonSet.Namespace, daemonSet.Name, workload.StableRevision, workload.CanaryRevision)
 
 	// not in rollout progressing
 	if _, ok = workload.Annotations[InRolloutProgressingAnnotation]; !ok {
 		return workload, nil
 	}
+
+	klog.Infof("******2:DaemonSet(%s/%s) workload StableRevision(%s), canary revision(%s)*******", daemonSet.Namespace, daemonSet.Name, workload.StableRevision, workload.CanaryRevision)
+	// Is it in rollback phase
+	if workload.StableRevision != "" && workload.StableRevision == workload.CanaryRevision {
+		workload.IsInRollback = true
+	}
+
 	// in rollout progressing
 	workload.InRolloutProgressing = true
-	// Is it in rollback phase
-	// has no currentRevision
-	// if daemonSet.Status.CurrentRevision == cloneSet.Status.UpdateRevision && cloneSet.Status.UpdatedReplicas != cloneSet.Status.Replicas {
-	// 	workload.IsInRollback = true
-	// }
+
 	return workload, nil
 }
 

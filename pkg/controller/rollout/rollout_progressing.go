@@ -154,6 +154,9 @@ func (r *RolloutReconciler) doProgressingInitializing(c *util.RolloutContext) (b
 
 func (r *RolloutReconciler) doProgressingInRolling(c *util.RolloutContext) error {
 	// Handle the 5 special cases firstly, and we had better keep the order of following cases:
+	klog.Infof("*********rollout(%s/%s) workload isInRollback: (%s) WorkloadCanary(%s) RollouCanary(%s), hasbatchLabel(%s) *********",
+		c.Rollout.Namespace, c.Rollout.Name, c.Workload.IsInRollback, c.Workload.CanaryRevision, c.Rollout.Status.CanaryStatus.CanaryRevision,
+		util.IsRollbackInBatchPolicy(c.Rollout, c.Workload.Labels))
 
 	switch {
 	// 1. In case of rollback in a quick way, un-paused and just use workload rolling strategy
@@ -282,6 +285,7 @@ func isRollingBackDirectly(rollout *v1alpha1.Rollout, workload *util.Workload) b
 func isRollingBackInBatches(rollout *v1alpha1.Rollout, workload *util.Workload) bool {
 	status := &rollout.Status
 	inBatch := util.IsRollbackInBatchPolicy(rollout, workload.Labels)
+
 	return workload.IsInRollback && workload.CanaryRevision != status.CanaryStatus.CanaryRevision && inBatch
 }
 

@@ -50,9 +50,9 @@ func IsRollbackInBatchPolicy(rollout *rolloutv1alpha1.Rollout, labels map[string
 		return false
 	}
 	workloadRef := rollout.Spec.ObjectRef.WorkloadRef
-	//currently, only CloneSet, StatefulSet support this policy
+	//currently, only CloneSet, StatefulSet, Advanced DaemonSet support this policy
 	if workloadRef.Kind == ControllerKindSts.Kind ||
-		workloadRef.Kind == ControllerKruiseKindCS.Kind ||
+		workloadRef.Kind == ControllerKruiseKindCS.Kind || workloadRef.Kind == ControllerKruiseKindDS.Kind ||
 		strings.EqualFold(labels[WorkloadTypeLabel], ControllerKindSts.Kind) {
 		if rollout.Annotations[rolloutv1alpha1.RollbackInBatchAnnotation] == "true" {
 			return true

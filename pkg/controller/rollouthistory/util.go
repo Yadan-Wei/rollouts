@@ -81,12 +81,12 @@ func (r *controllerFinder2) getLabelSelectorForRef(namespace string, ref *rollou
 
 func (r *controllerFinder2) finders2LabelSelector() []controllerFinderFunc2LabelSelector {
 	return []controllerFinderFunc2LabelSelector{r.getLabelSelectorWithAdvancedStatefulSet, r.getLabelSelectorWithCloneSet,
-		r.getLabelSelectorWithDeployment, r.getLabelSelectorWithNativeStatefulSet}
+		r.getLabelSelectorWithDeployment, r.getLabelSelectorWithNativeStatefulSet, r.getLabelSelectorWithDaemonSet}
 }
 
 func (r *controllerFinder2) finders2() []controllerFinderFunc2 {
 	return []controllerFinderFunc2{r.getWorkloadInfoWithAdvancedStatefulSet, r.getWorkloadInfoWithCloneSet,
-		r.getWorkloadInfoWithDeployment, r.getWorkloadInfoWithNativeStatefulSet}
+		r.getWorkloadInfoWithDeployment, r.getWorkloadInfoWithNativeStatefulSet, r.getWorkloadInfoWithDaemonSet}
 }
 
 // getWorkloadInfoWithAdvancedStatefulSet returns WorkloadInfo with kruise statefulset referenced by the provided controllerRef
@@ -182,6 +182,60 @@ func (r *controllerFinder2) getLabelSelectorWithCloneSet(namespace string, ref *
 	}
 	// get workload
 	workload := &appsv1alpha1.CloneSet{}
+	err := r.Get(context.TODO(), types.NamespacedName{Namespace: namespace, Name: ref.Name}, workload)
+	if err != nil {
+		// when error is NotFound, it is ok here.
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// assign value
+	labelSelector := workload.Spec.Selector
+
+	return labelSelector, nil
+}
+
+// getWorkloadInfoWithDaemonSet returns WorkloadInfo with kruise daemonset referenced by the provided controllerRef
+func (r *controllerFinder2) getWorkloadInfoWithDaemonSet(namespace string, ref *rolloutv1alpha1.WorkloadRef) (*rolloutv1alpha1.WorkloadInfo, error) {
+	// This error is irreversible, so there is no need to return error
+	ok, _ := verifyGroupKind(ref, util.ControllerKruiseKindDS.Kind, []string{util.ControllerKruiseKindDS.Group})
+	if !ok {
+		return nil, nil
+	}
+	// get workload
+	workload := &appsv1alpha1.DaemonSet{}
+	err := r.Get(context.TODO(), types.NamespacedName{Namespace: namespace, Name: ref.Name}, workload)
+	if err != nil {
+		// when error is NotFound, it is ok here.
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// assign value
+	workloadInfo := &rolloutv1alpha1.WorkloadInfo{}
+	workloadInfo.APIVersion = workload.APIVersion
+	workloadInfo.Kind = workload.Kind
+	workloadInfo.Name = workload.Name
+	if workloadInfo.Data.Raw, err = json.Marshal(workload.Spec); err != nil {
+		return nil, err
+	}
+
+	return workloadInfo, nil
+}
+
+// getLabelSelectorWithDaemonSet returns selector with kruise daemonset referenced by the provided controllerRef
+func (r *controllerFinder2) getLabelSelectorWithDaemonSet(namespace string, ref *rolloutv1alpha1.WorkloadRef) (*v1.LabelSelector, error) {
+	// This error is irreversible, so there is no need to return error
+	ok, _ := verifyGroupKind(ref, util.ControllerKruiseKindDS.Kind, []string{util.ControllerKruiseKindDS.Group})
+	if !ok {
+		return nil, nil
+	}
+	// get workload
+	workload := &appsv1alpha1.DaemonSet{}
 	err := r.Get(context.TODO(), types.NamespacedName{Namespace: namespace, Name: ref.Name}, workload)
 	if err != nil {
 		// when error is NotFound, it is ok here.

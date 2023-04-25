@@ -201,6 +201,7 @@ func isWorkloadUnstable(event control.WorkloadEventType, _ *v1alpha1.BatchReleas
 }
 
 func isRollbackInBatchSatisfied(workloadInfo *util.WorkloadInfo, release *v1alpha1.BatchRelease) bool {
+	klog.Infof("*****Stable revision is(%s) update revision is (%s) annoations is (%s)*********", workloadInfo.Status.StableRevision, workloadInfo.Status.UpdateRevision, release.Annotations[v1alpha1.RollbackInBatchAnnotation])
 	return workloadInfo.Status.StableRevision == workloadInfo.Status.UpdateRevision && release.Annotations[v1alpha1.RollbackInBatchAnnotation] != ""
 }
 
