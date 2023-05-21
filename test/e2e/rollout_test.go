@@ -5087,7 +5087,7 @@ var _ = SIGDescribe("Rollout", func() {
 			WaitDaemonSetAllPodsReady(workload)
 			By("rollout completed, and check")
 
-			// check deployment
+			// check daemonset
 			Expect(GetObject(workload.Name, workload)).NotTo(HaveOccurred())
 			Expect(workload.Status.UpdatedNumberScheduled).Should(BeNumerically("==", workload.Status.DesiredNumberScheduled))
 			Expect(workload.Status.NumberReady).Should(BeNumerically("==", workload.Status.DesiredNumberScheduled))
@@ -5226,7 +5226,7 @@ var _ = SIGDescribe("Rollout", func() {
 			WaitDaemonSetAllPodsReady(workload)
 			By("rollout completed, and check")
 
-			// check deployment
+			// check daemonset
 			// daemonset
 			Expect(GetObject(workload.Name, workload)).NotTo(HaveOccurred())
 			Expect(workload.Status.UpdatedNumberScheduled).Should(BeNumerically("==", workload.Status.DesiredNumberScheduled))
@@ -5285,7 +5285,7 @@ var _ = SIGDescribe("Rollout", func() {
 			By("check rollout status & paused success")
 
 			// v1 -> v2, start rollout action
-			By("Update deployment env NODE_NAME from(version1) -> to(version2)")
+			By("Update daemonset env NODE_NAME from(version1) -> to(version2)")
 			newEnvs := mergeEnvVar(workload.Spec.Template.Spec.Containers[0].Env, v1.EnvVar{Name: "NODE_NAME", Value: "version2"})
 			workload.Spec.Template.Spec.Containers[0].Env = newEnvs
 			UpdateDaemonSet(workload)
